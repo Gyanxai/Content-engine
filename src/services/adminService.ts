@@ -2,8 +2,7 @@ import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   query, orderBy, serverTimestamp
 } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../lib/firebase';
+import { db } from '../lib/firebase';
 import type { AdminRole } from '../contexts/AuthContext';
 
 export interface AdminUser {
