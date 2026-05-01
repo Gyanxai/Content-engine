@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { 
   getChapters, getTopics, getSubtopics, 
-  addChapter, updateChapter, deleteChapter,
-  addTopic, updateTopic, deleteTopic,
-  addSubtopic, updateSubtopic, deleteSubtopic
+  addChapter, deleteChapter,
+  addTopic, deleteTopic,
+  addSubtopic, deleteSubtopic
 } from '../services/contentService';
 import type { Chapter, Topic, Subtopic } from '../services/contentService';
-import { Plus, Trash2, Edit2, ChevronRight, ChevronDown, BookOpen, Layers, Target } from 'lucide-react';
+import { Plus, Trash2, ChevronRight, ChevronDown, BookOpen, Layers, Target } from 'lucide-react';
 
 const SUBJECTS = ['Mathematics', 'Science'];
 const CLASSES = ['5','6','7','8','9','10','11','12'];
