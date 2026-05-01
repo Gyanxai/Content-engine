@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { 
   getChapters, getTopics, getSubtopics, 
-  addChapter, deleteChapter,
-  addTopic, deleteTopic,
-  addSubtopic, deleteSubtopic
+  addChapter, updateChapter, deleteChapter,
+  addTopic, updateTopic, deleteTopic,
+  addSubtopic, updateSubtopic, deleteSubtopic
 } from '../services/contentService';
 import type { Chapter, Topic, Subtopic } from '../services/contentService';
-import { Plus, Trash2, ChevronRight, ChevronDown, BookOpen, Layers, Target } from 'lucide-react';
+import { Plus, Trash2, Edit2, ChevronRight, ChevronDown, BookOpen, Layers, Target } from 'lucide-react';
 
 const SUBJECTS = ['Mathematics', 'Science'];
 const CLASSES = ['5','6','7','8','9','10','11','12'];
@@ -67,6 +67,19 @@ export default function TaxonomyManager() {
     setChapters(prev => [...prev, { id, subject, class: cls, name, order: prev.length, status: 'draft' }]);
   };
 
+  const handleEditChapter = async (chapter: Chapter) => {
+    const name = prompt('Edit Chapter Name:', chapter.name);
+    if (!name || name === chapter.name) return;
+    await updateChapter(chapter.id!, { name });
+    setChapters(prev => prev.map(c => c.id === chapter.id ? { ...c, name } : c));
+  };
+
+  const handleDeleteChapter = async (id: string) => {
+    if (!confirm('Delete this chapter and all nested topics/subtopics?')) return;
+    await deleteChapter(id);
+    setChapters(prev => prev.filter(c => c.id !== id));
+  };
+
   const handleAddTopic = async (chapterId: string) => {
     const name = prompt('Enter Topic Name:');
     if (!name) return;
@@ -74,6 +87,16 @@ export default function TaxonomyManager() {
     setTopics(prev => ({
       ...prev,
       [chapterId]: [...(prev[chapterId] || []), { id, chapter_id: chapterId, name, order: (prev[chapterId]?.length || 0) }]
+    }));
+  };
+
+  const handleEditTopic = async (chapterId: string, topic: Topic) => {
+    const name = prompt('Edit Topic Name:', topic.name);
+    if (!name || name === topic.name) return;
+    await updateTopic(topic.id!, { name });
+    setTopics(prev => ({
+      ...prev,
+      [chapterId]: prev[chapterId].map(t => t.id === topic.id ? { ...t, name } : t)
     }));
   };
 
@@ -87,10 +110,14 @@ export default function TaxonomyManager() {
     }));
   };
 
-  const handleDeleteChapter = async (id: string) => {
-    if (!confirm('Delete this chapter and all nested topics/subtopics?')) return;
-    await deleteChapter(id);
-    setChapters(prev => prev.filter(c => c.id !== id));
+  const handleEditSubtopic = async (topicId: string, sub: Subtopic) => {
+    const name = prompt('Edit Subtopic Name:', sub.name);
+    if (!name || name === sub.name) return;
+    await updateSubtopic(sub.id!, { name });
+    setSubtopics(prev => ({
+      ...prev,
+      [topicId]: prev[topicId].map(s => s.id === sub.id ? { ...s, name } : s)
+    }));
   };
 
   const selectStyle = { padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-color)', fontFamily: 'inherit', fontSize: 14, outline: 'none', backgroundColor: '#0a0a0a', color: 'inherit' };
@@ -138,6 +165,9 @@ export default function TaxonomyManager() {
                   {expandedChapter === chapter.id ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                   <div style={{ flex: 1, fontWeight: 600 }}>{chapter.name}</div>
                   <div style={{ display: 'flex', gap: 8 }} onClick={e => e.stopPropagation()}>
+                    <button style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }} onClick={() => handleEditChapter(chapter)}>
+                      <Edit2 size={16} />
+                    </button>
                     <button style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }} onClick={() => handleDeleteChapter(chapter.id!)}>
                       <Trash2 size={16} />
                     </button>
@@ -163,7 +193,10 @@ export default function TaxonomyManager() {
                         }} onClick={() => toggleTopic(topic.id!)}>
                           {expandedTopic === topic.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                           <span style={{ flex: 1, fontSize: 14 }}>{topic.name}</span>
-                          <Trash2 size={14} color="var(--text-secondary)" onClick={(e) => { e.stopPropagation(); deleteTopic(topic.id!); setTopics(p => ({ ...p, [chapter.id!]: p[chapter.id!].filter(t => t.id !== topic.id) })); }} />
+                          <div style={{ display: 'flex', gap: 8 }} onClick={e => e.stopPropagation()}>
+                            <Edit2 size={14} color="var(--text-secondary)" style={{ cursor: 'pointer' }} onClick={() => handleEditTopic(chapter.id!, topic)} />
+                            <Trash2 size={14} color="var(--text-secondary)" style={{ cursor: 'pointer' }} onClick={() => { deleteTopic(topic.id!); setTopics(p => ({ ...p, [chapter.id!]: p[chapter.id!].filter(t => t.id !== topic.id) })); }} />
+                          </div>
                         </div>
 
                         {expandedTopic === topic.id && (
@@ -172,7 +205,10 @@ export default function TaxonomyManager() {
                               <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border-color)', fontSize: 13 }}>
                                 <Target size={14} color="var(--primary-purple)" />
                                 <span style={{ flex: 1 }}>{sub.name}</span>
-                                <Trash2 size={13} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => { deleteSubtopic(sub.id!); setSubtopics(p => ({ ...p, [topic.id!]: p[topic.id!].filter(s => s.id !== sub.id) })); }} />
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                  <Edit2 size={13} color="var(--text-secondary)" style={{ cursor: 'pointer' }} onClick={() => handleEditSubtopic(topic.id!, sub)} />
+                                  <Trash2 size={13} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => { deleteSubtopic(sub.id!); setSubtopics(p => ({ ...p, [topic.id!]: p[topic.id!].filter(s => s.id !== sub.id) })); }} />
+                                </div>
                               </div>
                             ))}
                             <button onClick={() => handleAddSubtopic(topic.id!)} style={{ padding: '6px', border: '1px dashed var(--border-color)', borderRadius: 6, background: 'none', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', marginTop: 4 }}>
