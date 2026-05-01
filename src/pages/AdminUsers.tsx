@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { getAdmins, updateAdminRole, setAdminDisabled, createAdminRecord, deleteAdminRecord } from '../services/adminService';
+import { getAdmins, updateAdminRole, setAdminDisabled, createAdminUser, deleteAdminRecord } from '../services/adminService';
 import type { AdminUser } from '../services/adminService';
 import type { AdminRole } from '../contexts/AuthContext';
 import { useAuth } from '../contexts/AuthContext';
-import { ShieldCheck, ToggleLeft, ToggleRight, UserPlus, Trash2 } from 'lucide-react';
+import { ShieldCheck, ToggleLeft, ToggleRight, UserPlus, Trash2, X, Check } from 'lucide-react';
 
 const ROLE_COLORS: Record<AdminRole, string> = {
   admin: '#8A5CFF', creator: '#1DAAF4', reviewer: '#4EB679', editor: '#FEC61F',
@@ -13,25 +13,45 @@ export default function AdminUsers() {
   const { user } = useAuth();
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Form state
+  const [showForm, setShowForm] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    displayName: '',
+    email: '',
+    password: '',
+    role: 'editor' as AdminRole
+  });
 
   useEffect(() => {
     getAdmins().then(a => { setAdmins(a); setLoading(false); });
   }, []);
 
-  const handleAddAdmin = async () => {
-    const uid = prompt('Enter User UID:');
-    if (!uid) return;
-    const email = prompt('Enter User Email:');
-    if (!email) return;
-    const role = prompt('Enter Role (admin/editor/creator/reviewer):', 'editor') as AdminRole;
-    if (!role || !ROLE_COLORS[role]) { alert('Invalid role'); return; }
-
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormLoading(true);
     try {
-      await createAdminRecord(uid, email, role, user?.uid || '');
-      setAdmins(prev => [{
-        uid, email, display_name: email.split('@')[0], role, disabled: false, created_by: user?.uid || '', created_at: Date.now()
-      } as any, ...prev]);
-    } catch (err) { alert('Failed to add admin record.'); }
+      const result = await createAdminUser(formData, user?.uid || '');
+      if (result.success) {
+        const newAdmin: AdminUser = {
+          uid: result.uid,
+          email: formData.email,
+          display_name: formData.displayName,
+          role: formData.role,
+          disabled: false,
+          created_by: user?.uid || '',
+          created_at: { seconds: Date.now() / 1000, nanoseconds: 0 } as any
+        };
+        setAdmins(prev => [newAdmin, ...prev]);
+        setShowForm(false);
+        setFormData({ displayName: '', email: '', password: '', role: 'editor' });
+      }
+    } catch (err: any) {
+      alert('Error creating admin: ' + err.message);
+    } finally {
+      setFormLoading(false);
+    }
   };
 
   const handleDelete = async (uid: string) => {
@@ -52,21 +72,61 @@ export default function AdminUsers() {
     setAdmins(prev => prev.map(a => a.uid === uid ? { ...a, disabled: !disabled } : a));
   };
 
+  const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: '#0a0a0a', color: 'inherit', fontFamily: 'inherit', fontSize: 14, outline: 'none' };
   const sel = { padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', fontFamily: 'inherit', fontSize: 13, outline: 'none', backgroundColor: '#0a0a0a', color: 'inherit' };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div className="flex-between">
         <div><h1>Admin Users</h1><p style={{ color: 'var(--text-secondary)' }}>Manage roles and access — Super Admin only.</p></div>
-        <button className="btn btn-primary" onClick={handleAddAdmin} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <UserPlus size={18} /> Add Admin Record
-        </button>
+        {!showForm && (
+          <button className="btn btn-primary" onClick={() => setShowForm(true)} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <UserPlus size={18} /> New Admin Account
+          </button>
+        )}
       </div>
+
+      {showForm && (
+        <div className="card" style={{ padding: '24px', position: 'relative', border: '1px solid var(--primary-purple)' }}>
+          <button onClick={() => setShowForm(false)} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <X size={20} />
+          </button>
+          <h2 style={{ fontSize: 18, marginBottom: 20 }}>Create New Admin</h2>
+          <form onSubmit={handleFormSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Full Name</label>
+              <input style={inputStyle} required placeholder="John Doe" value={formData.displayName} onChange={e => setFormData(p => ({ ...p, displayName: e.target.value }))} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Email Address</label>
+              <input style={inputStyle} type="email" required placeholder="admin@gyanx.in" value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Initial Password</label>
+              <input style={inputStyle} type="password" required placeholder="••••••••" value={formData.password} onChange={e => setFormData(p => ({ ...p, password: e.target.value }))} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Access Role</label>
+              <select style={{ ...inputStyle, padding: '9px 14px' }} value={formData.role} onChange={e => setFormData(p => ({ ...p, role: e.target.value as AdminRole }))}>
+                <option value="admin">Super Admin</option>
+                <option value="editor">Editor</option>
+                <option value="creator">Creator</option>
+                <option value="reviewer">Reviewer</option>
+              </select>
+            </div>
+            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+              <button type="submit" className="btn btn-primary" disabled={formLoading} style={{ padding: '10px 24px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                {formLoading ? 'Creating Account...' : <><Check size={18} /> Create Admin</>}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <div style={{ padding: '12px 16px', backgroundColor: 'rgba(138,92,255,0.1)', border: '1px solid rgba(138,92,255,0.2)', borderRadius: 10, display: 'flex', gap: 10 }}>
         <ShieldCheck size={18} color="var(--primary-purple)" />
         <span style={{ fontSize: 14, color: 'var(--primary-purple)', fontWeight: 500 }}>
-          Role changes update the <code>/admins</code> Firestore record. Call <code>npx ts-node scripts/setAdminClaims.ts</code> to also update Firebase Custom Claims.
+          Changes here update both the <strong>Auth Custom Claims</strong> and the <strong>Firestore Record</strong> automatically.
         </span>
       </div>
 
@@ -75,7 +135,7 @@ export default function AdminUsers() {
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-secondary)' }}>⏳ Loading admins…</div>
         ) : admins.length === 0 ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-secondary)' }}>
-            No admins found. Add documents to the <code>/admins</code> Firestore collection.
+            No admins found. Create an account above to get started.
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>

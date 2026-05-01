@@ -226,3 +226,15 @@ button {
 .badge-success { background-color: rgba(78, 182, 121, 0.1); color: var(--success-green); }
 .badge-warning { background-color: rgba(254, 198, 31, 0.1); color: #d9a002; }
 .badge-info { background-color: rgba(29, 170, 244, 0.1); color: var(--info-blue); }
+
+/* DND & Animations */
+.sortable-active {
+  background-color: rgba(138, 92, 255, 0.05);
+  border-radius: 12px;
+  box-shadow: 0 0 20px rgba(138, 92, 255, 0.1);
+}
+
+@keyframes modalSlide {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}

@@ -2,7 +2,8 @@ import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   query, orderBy, serverTimestamp
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../lib/firebase';
 import type { AdminRole } from '../contexts/AuthContext';
 
 export interface AdminUser {
@@ -55,4 +56,23 @@ export async function setAdminDisabled(uid: string, disabled: boolean): Promise<
 
 export async function deleteAdminRecord(uid: string): Promise<void> {
   await deleteDoc(doc(db, 'admins', uid));
+}
+
+export async function createAdminUser(data: {
+  email: string;
+  password: string;
+  displayName: string;
+  role: AdminRole;
+}, requesterUid: string): Promise<{ success: boolean; uid: string }> {
+  const response = await fetch('/api/create-admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...data, requesterUid })
+  });
+
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to create admin');
+  }
+  return result;
 }

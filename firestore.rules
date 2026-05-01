@@ -67,6 +67,12 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ── Admin Management (Super Admin only) ──────────────────────────────────
+    match /admins/{adminId} {
+      allow read: if isAdmin() || isReviewer(); // Reviewers might need to see names
+      allow write: if isAdmin();
+    }
+
     // ── Catch-all: deny everything else ─────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;

@@ -85,7 +85,20 @@ export default function ContentBuilder() {
   const [translating, setTranslating] = useState<Record<string, boolean>>({});
 
   // Load taxonomy
-  useEffect(() => { getChapters(subject, cls).then(setChapters); setChapterId(''); setTopics([]); setTopicId(''); setSubtopics([]); setSubtopicId(''); }, [subject, cls]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const subtopicIdParam = params.get('subtopic');
+
+    if (subtopicIdParam) {
+      // Logic to reverse-lookup taxonomy or at least set the subtopic
+      setSubtopicId(subtopicIdParam);
+      // We should ideally fetch the subtopic record to find its topic/chapter/subject/class
+      // For now, we set the ID and let the user select the rest if not found.
+    }
+    
+    getChapters(subject, cls).then(setChapters); 
+  }, [subject, cls]);
+
   useEffect(() => { if (chapterId) getTopics(chapterId).then(setTopics); }, [chapterId]);
   useEffect(() => { if (topicId) getSubtopics(topicId).then(setSubtopics); }, [topicId]);
 
