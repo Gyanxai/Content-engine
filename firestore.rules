@@ -1,0 +1,75 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.role == 'admin';
+    }
+
+    function isEditor() {
+      return isSignedIn() &&
+        (request.auth.token.role == 'admin' || request.auth.token.role == 'editor');
+    }
+
+    // ── User profiles ───────────────────────────────────────────────────────
+    // Students can only read/write their OWN document.
+    match /users/{userId} {
+      allow read:  if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId);
+      // Students may only update safe fields; admins can update anything.
+      allow update: if isOwner(userId) &&
+                       // Block students from escalating their own role
+                       !('role' in request.resource.data) &&
+                       !('custom_claims' in request.resource.data)
+                    || isAdmin();
+      allow delete: if isAdmin();
+
+      // Progress sub-collection — owned by the student
+      match /progress/{topicId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // ── Curriculum (read-only for students) ─────────────────────────────────
+    // Only published content is visible to students.
+    // Admins/editors can read drafts and write content.
+    match /curriculum/{docId} {
+      allow read: if isSignedIn() &&
+                    (resource.data.status == 'published' || isEditor());
+      allow write: if isEditor();
+
+      match /chapters/{chapterId} {
+        allow read: if isSignedIn() &&
+                      (resource.data.status == 'published' || isEditor());
+        allow write: if isEditor();
+
+        match /topics/{topicId} {
+          allow read: if isSignedIn() &&
+                        (resource.data.status == 'published' || isEditor());
+          allow write: if isEditor();
+        }
+      }
+    }
+
+    // ── Leaderboard (public read, admin write) ───────────────────────────────
+    match /leaderboard/{entryId} {
+      allow read:  if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── Catch-all: deny everything else ─────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
