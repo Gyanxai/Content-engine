@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  createAdminUser, deleteAdminRecord, getAdmins, setAdminDisabled, updateAdminAccess
+  createAdminUser, deleteAdminRecord, getAdmins, setAdminDisabled, updateAdminAccess, updateAdminPassword
 } from '../services/adminService';
 import type { AdminUser } from '../services/adminService';
 import type { AdminPermission, AdminRole } from '../contexts/AuthContext';
 import { useAuth } from '../contexts/AuthContext';
-import { Check, ShieldCheck, ToggleLeft, ToggleRight, Trash2, UserPlus, X, Eye, EyeOff } from 'lucide-react';
+import { Check, ShieldCheck, ToggleLeft, ToggleRight, Trash2, UserPlus, X, Eye, EyeOff, Key } from 'lucide-react';
 
 const ALL_PERMISSIONS: { id: AdminPermission; label: string; superOnly?: boolean }[] = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -46,6 +46,32 @@ export default function AdminUsers() {
   const [showForm, setShowForm] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
+  
+  const [passwordTarget, setPasswordTarget] = useState<AdminUser | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordShow, setPasswordShow] = useState(false);
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordTarget || !newPassword) return;
+    if (newPassword.length < 6) {
+      alert('Password must be at least 6 characters long.');
+      return;
+    }
+    setPasswordLoading(true);
+    try {
+      await updateAdminPassword(passwordTarget.uid, newPassword);
+      alert(`Password updated successfully!`);
+      setPasswordTarget(null);
+      setNewPassword('');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update password');
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
   const [formData, setFormData] = useState({
     displayName: '',
     email: '',
@@ -228,15 +254,25 @@ export default function AdminUsers() {
                       </td>
                       <td><span className={`badge badge-${admin.disabled ? 'warning' : 'success'}`}>{admin.disabled ? 'Disabled' : 'Active'}</span></td>
                       <td>
-                        {editable && (
-                          <div className="row-actions">
-                            <button className="mini-action" onClick={() => handleToggle(admin.uid, admin.disabled)}>
-                              {admin.disabled ? <ToggleLeft size={14} /> : <ToggleRight size={14} />}
-                              {admin.disabled ? 'Enable' : 'Disable'}
+                        <div className="row-actions">
+                          {isSelf && (
+                            <button className="mini-action" style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }} onClick={() => setPasswordTarget(admin)}>
+                              <Key size={14} /> Change Password
                             </button>
-                            <button className="icon-btn danger" onClick={() => handleDelete(admin.uid)}><Trash2 size={14} /></button>
-                          </div>
-                        )}
+                          )}
+                          {editable && (
+                            <>
+                              <button className="mini-action" onClick={() => handleToggle(admin.uid, admin.disabled)}>
+                                {admin.disabled ? <ToggleLeft size={14} /> : <ToggleRight size={14} />}
+                                {admin.disabled ? 'Enable' : 'Disable'}
+                              </button>
+                              <button className="icon-btn" title="Change Password" style={{ color: 'var(--text-secondary)' }} onClick={() => setPasswordTarget(admin)}>
+                                <Key size={14} />
+                              </button>
+                              <button className="icon-btn danger" onClick={() => handleDelete(admin.uid)}><Trash2 size={14} /></button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -246,6 +282,48 @@ export default function AdminUsers() {
           </div>
         )}
       </section>
+
+      {passwordTarget && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="card" style={{ width: '400px', padding: '24px', zIndex: 1001, border: '1px solid var(--border-color)' }}>
+            <div className="flex-between" style={{ marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, fontSize: '18px' }}>Change Password</h2>
+              <button className="icon-btn" onClick={() => { setPasswordTarget(null); setNewPassword(''); }}><X size={18} /></button>
+            </div>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+              Setting new password for <strong>{passwordTarget.display_name}</strong>.
+            </p>
+            <form onSubmit={handlePasswordChange}>
+              <label style={{ display: 'block', marginBottom: '16px', fontSize: '13px' }}>
+                New Password
+                <div style={{ position: 'relative', marginTop: '6px' }}>
+                  <input
+                    className="field"
+                    type={passwordShow ? 'text' : 'password'}
+                    required
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    style={{ width: '100%', paddingRight: '40px' }}
+                    placeholder="Enter at least 6 characters"
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setPasswordShow(!passwordShow)}
+                    style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex' }}
+                  >
+                    {passwordShow ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </label>
+              <button type="submit" className="btn btn-primary" style={{ width: '100%', display: 'flex', justifyContent: 'center', gap: '8px' }} disabled={passwordLoading}>
+                <Check size={16} />
+                {passwordLoading ? 'Updating...' : 'Update Password'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

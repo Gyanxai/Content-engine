@@ -62,6 +62,17 @@ export async function updateAdminAccess(uid: string, role: AdminRole, permission
   if (!response.ok) throw new Error(result.error || 'Failed to update access');
 }
 
+export async function updateAdminPassword(uid: string, password: string): Promise<void> {
+  const token = await auth.currentUser?.getIdToken();
+  const response = await fetch('/api/create-admin', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ uid, password })
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || 'Failed to update password');
+}
+
 export async function setAdminDisabled(uid: string, disabled: boolean): Promise<void> {
   await updateDoc(doc(db, 'admins', uid), { disabled });
 }
