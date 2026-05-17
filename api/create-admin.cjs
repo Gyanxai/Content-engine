@@ -8,7 +8,7 @@ if (!admin.apps.length) {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
   } else if (fs.existsSync(saPath)) {
-    serviceAccount = require(saPath);
+    serviceAccount = JSON.parse(fs.readFileSync(saPath, 'utf8'));
   } else {
     throw new Error('FIREBASE_SERVICE_ACCOUNT environment variable is missing and service account file not found.');
   }
