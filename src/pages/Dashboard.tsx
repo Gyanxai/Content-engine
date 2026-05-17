@@ -1,13 +1,22 @@
 import { useEffect, useState } from 'react';
-import { FileText, Users, AlertCircle, Clock, TrendingUp, CheckCircle } from 'lucide-react';
+import {
+  AlertCircle, BookOpen, CheckCircle2, Clock, FileStack,
+  GraduationCap, Layers3, Users
+} from 'lucide-react';
 import { getDashboardStats } from '../services/contentService';
+import gyanxLogo from '../assets/Gyanxlogo.jpeg';
 
 interface Stats {
-  publishedQuestions: number;
+  totalContent: number;
+  publishedContent: number;
   totalStudents: number;
   pendingReview: number;
-  draftCount: number;
-  recentAttempts: Record<string, unknown>[];
+  curricula: number;
+  contentTypes: number;
+  contentIssues: number;
+  completionRate: number;
+  averageLearningTime: number;
+  testsAttempted: number;
 }
 
 export default function Dashboard() {
@@ -15,86 +24,53 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getDashboardStats().then(s => { setStats(s); setLoading(false); })
-      .catch(() => setLoading(false));
+    getDashboardStats()
+      .then(s => setStats(s as Stats))
+      .catch(() => setStats(null))
+      .finally(() => setLoading(false));
   }, []);
 
-  const cards = stats ? [
-    { label: 'Published Questions', value: stats.publishedQuestions, icon: CheckCircle, color: 'var(--success-green)' },
-    { label: 'Total Students', value: stats.totalStudents, icon: Users, color: 'var(--info-blue)' },
-    { label: 'Pending Review', value: stats.pendingReview, icon: AlertCircle, color: 'var(--warning-yellow)' },
-    { label: 'Drafts', value: stats.draftCount, icon: FileText, color: 'var(--primary-purple)' },
-  ] : [];
+  const cards = [
+    { label: 'Total Content Created', value: stats?.totalContent ?? 0, icon: FileStack, tone: 'blue' },
+    { label: 'Completion Rate', value: `${stats?.completionRate ?? 0}%`, icon: CheckCircle2, tone: 'green' },
+    { label: 'Total User', value: stats?.totalStudents ?? 0, icon: Users, tone: 'purple' },
+    { label: 'Content Issues Reported', value: stats?.contentIssues ?? 0, icon: AlertCircle, tone: 'yellow' },
+    { label: 'Tests Attempted', value: stats?.testsAttempted ?? 0, icon: GraduationCap, tone: 'purple' },
+    { label: 'Published Content', value: stats?.publishedContent ?? 0, icon: BookOpen, tone: 'green' },
+    { label: 'Types of Content', value: stats?.contentTypes ?? 0, icon: Layers3, tone: 'blue' },
+    { label: 'Average Learning Time', value: `${stats?.averageLearningTime ?? 0}s`, icon: Clock, tone: 'yellow' },
+  ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
-      <div>
-        <h1>Dashboard</h1>
-        <p style={{ color: 'var(--text-secondary)' }}>Live overview from Cloud Firestore.</p>
-      </div>
+    <div className="dashboard-screen">
+      <section className="dashboard-hero card">
+        <div className="dashboard-orbit" aria-hidden="true" style={{ background: 'transparent' }}>
+          <img src={gyanxLogo} alt="GyanX Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+        </div>
+        <div className="dashboard-copy">
+          <h1>Content Builder Dashboard</h1>
+          <p>Track curriculum readiness, content review, learner engagement, and publishing health for the GyanX app.</p>
+          <div className="dashboard-summary">
+            <span>{stats?.curricula ?? 0} curricula</span>
+            <span>{stats?.pendingReview ?? 0} awaiting review</span>
+          </div>
+        </div>
+      </section>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-secondary)' }}>
-          <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
-          Loading live data from Firebase…
-        </div>
+        <div className="empty-state">Loading live dashboard data...</div>
       ) : (
-        <>
-          <div className="grid-3" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-            {cards.map(({ label, value, icon: Icon, color }) => (
-              <div key={label} className="card stat-card">
-                <div className="flex-between">
-                  <span className="label">{label}</span>
-                  <Icon size={20} color={color} />
-                </div>
-                <span className="value">{value ?? '—'}</span>
+        <section className="metric-grid">
+          {cards.map(({ label, value, icon: Icon, tone }) => (
+            <article key={label} className={`metric-tile metric-${tone}`}>
+              <div>
+                <p>{label}</p>
+                <strong>{value}</strong>
               </div>
-            ))}
-          </div>
-
-          <div className="card">
-            <div className="flex-between" style={{ marginBottom: 16 }}>
-              <h2 style={{ fontSize: 16 }}>Recent Quiz Attempts</h2>
-              <TrendingUp size={18} color="var(--text-secondary)" />
-            </div>
-            {stats?.recentAttempts.length === 0 ? (
-              <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: 24 }}>No quiz attempts yet.</p>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid var(--border-color)', backgroundColor: '#050505' }}>
-                      {['Student UID', 'Subject', 'Chapter', 'Level', 'Score', 'Time'].map(h => (
-                        <th key={h} style={{ padding: '8px 12px', fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stats?.recentAttempts.map((a, i) => {
-                      const att = a as Record<string, unknown>;
-                      const score = att.score as number;
-                      return (
-                        <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                          <td style={{ padding: '12px', fontFamily: 'monospace', fontSize: 13 }}>{String(att.student_uid ?? '').slice(0, 12)}…</td>
-                          <td style={{ padding: '12px' }}>{String(att.subject ?? '—')}</td>
-                          <td style={{ padding: '12px' }}>{String(att.chapter_id ?? '—')}</td>
-                          <td style={{ padding: '12px' }}><span className="badge badge-info">{String(att.level ?? '—')}</span></td>
-                          <td style={{ padding: '12px' }}>
-                            <span className={`badge badge-${score >= 80 ? 'success' : 'warning'}`}>{score}%</span>
-                          </td>
-                          <td style={{ padding: '12px', color: 'var(--text-secondary)', fontSize: 13 }}>
-                            <Clock size={14} style={{ display: 'inline', marginRight: 4 }} />
-                            {Math.round((att.time_ms as number) / 1000)}s
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </>
+              <Icon size={24} />
+            </article>
+          ))}
+        </section>
       )}
     </div>
   );

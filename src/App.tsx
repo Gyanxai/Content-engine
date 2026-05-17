@@ -3,11 +3,11 @@ import { useAuth } from './contexts/AuthContext';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import PrivateRoute from './components/PrivateRoute';
+import ErrorBoundary from './components/ErrorBoundary';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ContentBuilder from './pages/ContentBuilder';
 import ContentLibrary from './pages/ContentLibrary';
-import BulkImport from './pages/BulkImport';
 import Analytics from './pages/Analytics';
 import AdminUsers from './pages/AdminUsers';
 import TaxonomyManager from './pages/TaxonomyManager';
@@ -19,20 +19,17 @@ function AdminLayout() {
       <div className="main-content">
         <Topbar />
         <main className="page-content">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/builder" element={<ContentBuilder />} />
-            <Route path="/library" element={<ContentLibrary />} />
-            <Route path="/taxonomy" element={<TaxonomyManager />} />
-            <Route path="/import" element={<BulkImport />} />
-            <Route path="/analytics" element={<Analytics />} />
-            <Route path="/admins" element={
-              <PrivateRoute allowedRoles={['admin']}>
-                <AdminUsers />
-              </PrivateRoute>
-            } />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/builder" element={<ContentBuilder />} />
+              <Route path="/library" element={<ContentLibrary />} />
+              <Route path="/taxonomy" element={<TaxonomyManager />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/admins" element={<AdminUsers />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </ErrorBoundary>
         </main>
       </div>
     </div>

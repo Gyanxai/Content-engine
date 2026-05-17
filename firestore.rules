@@ -13,64 +13,122 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && request.auth.token.role == 'admin';
+      return isSignedIn() && request.auth.token.role in ['super_admin', 'admin'];
     }
 
-    function isEditor() {
+    function canBuildCurriculum() {
       return isSignedIn() &&
-        (request.auth.token.role == 'admin' || request.auth.token.role == 'editor');
+        (request.auth.token.role in ['super_admin', 'admin'] ||
+          'curriculum_builder' in request.auth.token.permissions);
+    }
+
+    function isReviewer() {
+      return isSignedIn() &&
+        (request.auth.token.role in ['super_admin', 'admin', 'reviewer'] ||
+          'review_publish' in request.auth.token.permissions);
+    }
+
+    function isContentStaff() {
+      return isSignedIn() &&
+        (request.auth.token.role in ['super_admin', 'admin', 'creator', 'reviewer']);
+    }
+
+    function canManageAdmins() {
+      return isSignedIn() &&
+        (request.auth.token.role == 'super_admin' || 'manage_admins' in request.auth.token.permissions);
     }
 
     // ── User profiles ───────────────────────────────────────────────────────
-    // Students can only read/write their OWN document.
     match /users/{userId} {
       allow read:  if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId);
-      // Students may only update safe fields; admins can update anything.
       allow update: if isOwner(userId) &&
-                       // Block students from escalating their own role
                        !('role' in request.resource.data) &&
                        !('custom_claims' in request.resource.data)
                     || isAdmin();
       allow delete: if isAdmin();
-
-      // Progress sub-collection — owned by the student
-      match /progress/{topicId} {
-        allow read, write: if isOwner(userId);
-      }
     }
 
-    // ── Curriculum (read-only for students) ─────────────────────────────────
-    // Only published content is visible to students.
-    // Admins/editors can read drafts and write content.
-    match /curriculum/{docId} {
+    // ── Adaptive Learning Engine (Student Data) ──────────────────────────────
+    match /user_progress/{docId} {
+      // docId is userId_conceptId
+      allow read, write: if isSignedIn() && docId.startsWith(request.auth.uid);
+    }
+
+    match /user_attempts/{attemptId} {
+      allow create: if isOwner(request.resource.data.user_id);
+      allow read: if (isSignedIn() && resource.data.user_id == request.auth.uid) || isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    match /user_reviews/{docId} {
+      allow read, write: if isSignedIn() && docId.startsWith(request.auth.uid);
+    }
+
+    match /analytics_events/{eventId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ── Curriculum and content engine ───────────────────────────────────────
+    match /curricula/{docId} {
       allow read: if isSignedIn() &&
-                    (resource.data.status == 'published' || isEditor());
-      allow write: if isEditor();
+                    (resource.data.state == 'published' || isContentStaff());
+      allow create, update, delete: if canBuildCurriculum();
+    }
 
-      match /chapters/{chapterId} {
-        allow read: if isSignedIn() &&
-                      (resource.data.status == 'published' || isEditor());
-        allow write: if isEditor();
+    match /chapters/{chapterId} {
+      allow read: if isSignedIn() &&
+                    (resource.data.state == 'published' || isContentStaff());
+      allow create, update, delete: if canBuildCurriculum();
+    }
 
-        match /topics/{topicId} {
-          allow read: if isSignedIn() &&
-                        (resource.data.status == 'published' || isEditor());
-          allow write: if isEditor();
-        }
-      }
+    match /topics/{topicId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if canBuildCurriculum();
+    }
+
+    match /subtopics/{subtopicId} {
+      allow read: if isSignedIn() &&
+                    (resource.data.state == 'published' || isContentStaff());
+      allow create, update, delete: if canBuildCurriculum();
+    }
+
+    match /content_items/{contentId} {
+      allow read: if isSignedIn() &&
+                    (resource.data.state == 'published' || isContentStaff());
+      allow create: if isContentStaff();
+      allow update: if isContentStaff() &&
+                    (
+                      !('state' in request.resource.data.diff(resource.data).changedKeys()) ||
+                      request.resource.data.state in ['draft', 'review'] ||
+                      isReviewer()
+                    );
+      allow delete: if canBuildCurriculum();
+    }
+
+    match /content_versions/{versionId} {
+      allow read: if isContentStaff();
+      allow create: if isContentStaff();
+      allow update, delete: if false;
+    }
+
+    match /content_issues/{issueId} {
+      allow read: if isContentStaff();
+      allow create: if isSignedIn();
+      allow update, delete: if canBuildCurriculum();
     }
 
     // ── Leaderboard (public read, admin write) ───────────────────────────────
     match /leaderboard/{entryId} {
       allow read:  if isSignedIn();
-      allow write: if isAdmin();
+      allow write: if request.auth.token.role == 'super_admin';
     }
 
     // ── Admin Management (Super Admin only) ──────────────────────────────────
     match /admins/{adminId} {
-      allow read: if isAdmin() || isReviewer(); // Reviewers might need to see names
-      allow write: if isAdmin();
+      allow read: if isOwner(adminId) || canManageAdmins();
+      allow write: if canManageAdmins();
     }
 
     // ── Catch-all: deny everything else ─────────────────────────────────────

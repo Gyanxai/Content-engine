@@ -1,206 +1,251 @@
-import { useEffect, useState } from 'react';
-import { getAdmins, updateAdminRole, setAdminDisabled, createAdminUser, deleteAdminRecord } from '../services/adminService';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  createAdminUser, deleteAdminRecord, getAdmins, setAdminDisabled, updateAdminAccess
+} from '../services/adminService';
 import type { AdminUser } from '../services/adminService';
-import type { AdminRole } from '../contexts/AuthContext';
+import type { AdminPermission, AdminRole } from '../contexts/AuthContext';
 import { useAuth } from '../contexts/AuthContext';
-import { ShieldCheck, ToggleLeft, ToggleRight, UserPlus, Trash2, X, Check } from 'lucide-react';
+import { Check, ShieldCheck, ToggleLeft, ToggleRight, Trash2, UserPlus, X, Eye, EyeOff } from 'lucide-react';
+
+const ALL_PERMISSIONS: { id: AdminPermission; label: string; superOnly?: boolean }[] = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'curriculum_builder', label: 'Curriculum Builder' },
+  { id: 'existing_curriculum', label: 'Existing Curriculum' },
+  { id: 'analytics', label: 'Analytics' },
+  { id: 'bulk_import', label: 'JSON Bulk Import' },
+  { id: 'review_publish', label: 'Review & Publish' },
+  { id: 'manage_admins', label: 'Create Admin Users' },
+  { id: 'manage_super_admins', label: 'Create Super Admins', superOnly: true },
+];
+
+const ROLE_LABEL: Record<AdminRole, string> = {
+  super_admin: 'Super Admin',
+  admin: 'Admin',
+  creator: 'Content Creator',
+  reviewer: 'Reviewer',
+};
 
 const ROLE_COLORS: Record<AdminRole, string> = {
-  admin: '#8A5CFF', creator: '#1DAAF4', reviewer: '#4EB679', editor: '#FEC61F',
+  super_admin: '#8A5CFF',
+  admin: '#1DAAF4',
+  creator: '#FEC61F',
+  reviewer: '#4EB679',
+};
+
+const ROLE_DEFAULTS: Record<AdminRole, AdminPermission[]> = {
+  super_admin: ALL_PERMISSIONS.map(p => p.id),
+  admin: ['dashboard', 'curriculum_builder', 'existing_curriculum', 'analytics', 'bulk_import', 'review_publish', 'manage_admins'],
+  creator: ['dashboard', 'curriculum_builder', 'existing_curriculum', 'bulk_import'],
+  reviewer: ['dashboard', 'existing_curriculum', 'analytics', 'review_publish'],
 };
 
 export default function AdminUsers() {
-  const { user } = useAuth();
+  const { user, role, permissions } = useAuth();
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // Form state
   const [showForm, setShowForm] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [formData, setFormData] = useState({
     displayName: '',
     email: '',
     password: '',
-    role: 'editor' as AdminRole
+    role: 'creator' as AdminRole,
+    permissions: ROLE_DEFAULTS.creator,
   });
 
+  const canManageSuper = role === 'super_admin' || permissions.includes('manage_super_admins');
+  const canManageAdmins = role === 'super_admin' || permissions.includes('manage_admins');
+  const availableRoles = useMemo<AdminRole[]>(() => canManageSuper
+    ? ['super_admin', 'admin', 'creator', 'reviewer']
+    : ['admin', 'creator', 'reviewer'], [canManageSuper]);
+  const grantablePermissions = ALL_PERMISSIONS.filter(permission => canManageSuper || !permission.superOnly);
+
   useEffect(() => {
-    getAdmins().then(a => { setAdmins(a); setLoading(false); });
+    getAdmins().then(results => {
+      setAdmins(results);
+      setLoading(false);
+    });
   }, []);
+
+  const setRoleWithDefaults = (nextRole: AdminRole) => {
+    const nextPermissions = ROLE_DEFAULTS[nextRole].filter(permission =>
+      canManageSuper || !ALL_PERMISSIONS.find(p => p.id === permission)?.superOnly
+    );
+    setFormData(prev => ({ ...prev, role: nextRole, permissions: nextPermissions }));
+  };
+
+  const toggleFormPermission = (permission: AdminPermission) => {
+    setFormData(prev => ({
+      ...prev,
+      permissions: prev.permissions.includes(permission)
+        ? prev.permissions.filter(p => p !== permission)
+        : [...prev.permissions, permission],
+    }));
+  };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user || !canManageAdmins) return;
     setFormLoading(true);
     try {
-      const result = await createAdminUser(formData, user?.uid || '');
-      if (result.success) {
-        const newAdmin: AdminUser = {
-          uid: result.uid,
-          email: formData.email,
-          display_name: formData.displayName,
-          role: formData.role,
-          disabled: false,
-          created_by: user?.uid || '',
-          created_at: { seconds: Date.now() / 1000, nanoseconds: 0 } as any
-        };
-        setAdmins(prev => [newAdmin, ...prev]);
-        setShowForm(false);
-        setFormData({ displayName: '', email: '', password: '', role: 'editor' });
-      }
-    } catch (err: any) {
-      alert('Error creating admin: ' + err.message);
+      const result = await createAdminUser(formData, user.uid);
+      setAdmins(prev => [{
+        uid: result.uid,
+        email: formData.email,
+        display_name: formData.displayName,
+        role: formData.role,
+        permissions: formData.permissions,
+        disabled: false,
+        created_by: user.uid,
+        created_at: new Date(),
+      }, ...prev]);
+      setShowForm(false);
+      setFormData({ displayName: '', email: '', password: '', role: 'creator', permissions: ROLE_DEFAULTS.creator });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to create user.');
     } finally {
       setFormLoading(false);
     }
   };
 
-  const handleDelete = async (uid: string) => {
-    if (!confirm('Delete this admin record? This does NOT delete the Firebase Auth account.')) return;
-    try {
-      await deleteAdminRecord(uid);
-      setAdmins(prev => prev.filter(a => a.uid !== uid));
-    } catch (err) { alert('Failed to delete.'); }
+  const updateAccess = async (admin: AdminUser, nextRole: AdminRole, nextPermissions: AdminPermission[]) => {
+    if (!user) return;
+    await updateAdminAccess(admin.uid, nextRole, nextPermissions, user.uid);
+    setAdmins(prev => prev.map(item => item.uid === admin.uid ? { ...item, role: nextRole, permissions: nextPermissions } : item));
   };
 
-  const handleRoleChange = async (uid: string, role: AdminRole) => {
-    await updateAdminRole(uid, role);
-    setAdmins(prev => prev.map(a => a.uid === uid ? { ...a, role } : a));
+  const toggleUserPermission = (admin: AdminUser, permission: AdminPermission) => {
+    const nextPermissions = admin.permissions?.includes(permission)
+      ? admin.permissions.filter(p => p !== permission)
+      : [...(admin.permissions ?? []), permission];
+    updateAccess(admin, admin.role, nextPermissions);
+  };
+
+  const handleDelete = async (uid: string) => {
+    if (!confirm('Delete this admin record? Firebase Auth deletion must be handled server-side if needed.')) return;
+    await deleteAdminRecord(uid);
+    setAdmins(prev => prev.filter(admin => admin.uid !== uid));
   };
 
   const handleToggle = async (uid: string, disabled: boolean) => {
     await setAdminDisabled(uid, !disabled);
-    setAdmins(prev => prev.map(a => a.uid === uid ? { ...a, disabled: !disabled } : a));
+    setAdmins(prev => prev.map(admin => admin.uid === uid ? { ...admin, disabled: !disabled } : admin));
   };
 
-  const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: '#0a0a0a', color: 'inherit', fontFamily: 'inherit', fontSize: 14, outline: 'none' };
-  const sel = { padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', fontFamily: 'inherit', fontSize: 13, outline: 'none', backgroundColor: '#0a0a0a', color: 'inherit' };
+  if (!canManageAdmins) {
+    return <div className="empty-state">You do not have access to manage admin accounts.</div>;
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <div className="flex-between">
-        <div><h1>Admin Users</h1><p style={{ color: 'var(--text-secondary)' }}>Manage roles and access — Super Admin only.</p></div>
-        {!showForm && (
-          <button className="btn btn-primary" onClick={() => setShowForm(true)} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <UserPlus size={18} /> New Admin Account
-          </button>
-        )}
+    <div className="library-screen">
+      <div className="page-heading">
+        <div>
+          <h1>Access Control</h1>
+          <p>Create admin accounts, assign roles, and check exact permissions.</p>
+        </div>
+        {!showForm && <button className="btn btn-primary" onClick={() => setShowForm(true)}><UserPlus size={18} /> New Account</button>}
       </div>
 
       {showForm && (
-        <div className="card" style={{ padding: '24px', position: 'relative', border: '1px solid var(--primary-purple)' }}>
-          <button onClick={() => setShowForm(false)} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-            <X size={20} />
-          </button>
-          <h2 style={{ fontSize: 18, marginBottom: 20 }}>Create New Admin</h2>
-          <form onSubmit={handleFormSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <label style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Full Name</label>
-              <input style={inputStyle} required placeholder="John Doe" value={formData.displayName} onChange={e => setFormData(p => ({ ...p, displayName: e.target.value }))} />
+        <section className="card access-form">
+          <div className="flex-between">
+            <h2>Create Account</h2>
+            <button className="icon-btn" onClick={() => setShowForm(false)}><X size={18} /></button>
+          </div>
+          <form onSubmit={handleFormSubmit}>
+            <label>Name<input className="field" required value={formData.displayName} onChange={e => setFormData(prev => ({ ...prev, displayName: e.target.value }))} /></label>
+            <label>Email<input className="field" type="email" required value={formData.email} onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))} /></label>
+            <label>Password
+              <div style={{ position: 'relative' }}>
+                <input className="field" type={showPassword ? 'text' : 'password'} required value={formData.password} onChange={e => setFormData(prev => ({ ...prev, password: e.target.value }))} style={{ width: '100%', paddingRight: '40px' }} />
+                <button type="button" tabIndex={-1} onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex' }}>
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </label>
+            <label>Role<select className="field" value={formData.role} onChange={e => setRoleWithDefaults(e.target.value as AdminRole)}>{availableRoles.map(nextRole => <option key={nextRole} value={nextRole}>{ROLE_LABEL[nextRole]}</option>)}</select></label>
+            <div className="permission-grid">
+              {grantablePermissions.map(permission => (
+                <label key={permission.id} className="permission-check">
+                  <input type="checkbox" checked={formData.permissions.includes(permission.id)} onChange={() => toggleFormPermission(permission.id)} />
+                  <span>{permission.label}</span>
+                </label>
+              ))}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <label style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Email Address</label>
-              <input style={inputStyle} type="email" required placeholder="admin@gyanx.in" value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <label style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Initial Password</label>
-              <input style={inputStyle} type="password" required placeholder="••••••••" value={formData.password} onChange={e => setFormData(p => ({ ...p, password: e.target.value }))} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <label style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Access Role</label>
-              <select style={{ ...inputStyle, padding: '9px 14px' }} value={formData.role} onChange={e => setFormData(p => ({ ...p, role: e.target.value as AdminRole }))}>
-                <option value="admin">Super Admin</option>
-                <option value="editor">Editor</option>
-                <option value="creator">Creator</option>
-                <option value="reviewer">Reviewer</option>
-              </select>
-            </div>
-            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-              <button type="submit" className="btn btn-primary" disabled={formLoading} style={{ padding: '10px 24px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                {formLoading ? 'Creating Account...' : <><Check size={18} /> Create Admin</>}
-              </button>
-            </div>
+            <button type="submit" className="btn btn-primary" disabled={formLoading}><Check size={16} /> {formLoading ? 'Creating...' : 'Create Account'}</button>
           </form>
-        </div>
+        </section>
       )}
 
-      <div style={{ padding: '12px 16px', backgroundColor: 'rgba(138,92,255,0.1)', border: '1px solid rgba(138,92,255,0.2)', borderRadius: 10, display: 'flex', gap: 10 }}>
-        <ShieldCheck size={18} color="var(--primary-purple)" />
-        <span style={{ fontSize: 14, color: 'var(--primary-purple)', fontWeight: 500 }}>
-          Changes here update both the <strong>Auth Custom Claims</strong> and the <strong>Firestore Record</strong> automatically.
-        </span>
-      </div>
+      <section className="card access-note">
+        <ShieldCheck size={18} />
+        <span>Super admin access is controlled by Firebase custom claims and the `/admins` record. Credentials are not hardcoded in the app.</span>
+      </section>
 
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <section className="card table-card">
         {loading ? (
-          <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-secondary)' }}>⏳ Loading admins…</div>
-        ) : admins.length === 0 ? (
-          <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-secondary)' }}>
-            No admins found. Create an account above to get started.
-          </div>
+          <div className="empty-state">Loading accounts...</div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid var(--border-color)', backgroundColor: '#050505' }}>
-                {['Admin', 'UID', 'Role', 'Status', 'Actions'].map(h => (
-                  <th key={h} style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {admins.map(a => (
-                <tr key={a.uid} style={{ borderBottom: '1px solid var(--border-color)', opacity: a.disabled ? 0.5 : 1 }}>
-                  <td style={{ padding: '14px 16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: '50%', background: `linear-gradient(135deg, ${ROLE_COLORS[a.role] || '#8A5CFF'}, #1DAAF4)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 14 }}>
-                        {a.email?.[0]?.toUpperCase() || '?'}
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 600 }}>{a.display_name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{a.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td style={{ padding: '14px 16px', fontFamily: 'monospace', fontSize: 12, color: 'var(--text-secondary)' }}>{a.uid.slice(0, 16)}…</td>
-                  <td style={{ padding: '14px 16px' }}>
-                    {a.uid === user?.uid ? (
-                      <span style={{ color: ROLE_COLORS[a.role], fontWeight: 700, fontSize: 13, textTransform: 'capitalize' }}>{a.role} (you)</span>
-                    ) : (
-                      <select style={{ ...sel, color: ROLE_COLORS[a.role], fontWeight: 600 }} value={a.role}
-                        onChange={e => handleRoleChange(a.uid, e.target.value as AdminRole)}>
-                        <option value="admin">Admin</option>
-                        <option value="editor">Editor</option>
-                        <option value="creator">Creator</option>
-                        <option value="reviewer">Reviewer</option>
-                      </select>
-                    )}
-                  </td>
-                  <td style={{ padding: '14px 16px' }}>
-                    <span className={`badge badge-${a.disabled ? 'warning' : 'success'}`}>{a.disabled ? 'Disabled' : 'Active'}</span>
-                  </td>
-                  <td style={{ padding: '14px 16px' }}>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      {a.uid !== user?.uid && (
-                        <>
-                          <button onClick={() => handleToggle(a.uid, a.disabled)}
-                            style={{ background: 'none', border: `1px solid ${a.disabled ? 'var(--success-green)' : 'rgba(239,68,68,0.4)'}`, borderRadius: 6, padding: '5px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: a.disabled ? 'var(--success-green)' : '#ef4444', fontFamily: 'inherit' }}>
-                            {a.disabled ? <ToggleLeft size={15} /> : <ToggleRight size={15} />}
-                            {a.disabled ? 'Enable' : 'Disable'}
-                          </button>
-                          <button onClick={() => handleDelete(a.uid)}
-                            style={{ background: 'none', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 6, padding: '5px', cursor: 'pointer', color: '#ef4444' }}>
-                            <Trash2 size={15} />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>{['User', 'Role', 'Permissions', 'Status', 'Actions'].map(header => <th key={header}>{header}</th>)}</tr>
+              </thead>
+              <tbody>
+                {admins.map(admin => {
+                  const isSelf = admin.uid === user?.uid;
+                  const editable = !isSelf && (canManageSuper || admin.role !== 'super_admin');
+                  return (
+                    <tr key={admin.uid}>
+                      <td>
+                        <strong>{admin.display_name}</strong>
+                        <span>{admin.email}</span>
+                      </td>
+                      <td>
+                        {editable ? (
+                          <select className="field" value={admin.role} onChange={e => updateAccess(admin, e.target.value as AdminRole, ROLE_DEFAULTS[e.target.value as AdminRole])}>
+                            {availableRoles.map(nextRole => <option key={nextRole} value={nextRole}>{ROLE_LABEL[nextRole]}</option>)}
+                          </select>
+                        ) : (
+                          <span style={{ color: ROLE_COLORS[admin.role], fontWeight: 700 }}>{ROLE_LABEL[admin.role]}{isSelf ? ' (you)' : ''}</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="permission-grid compact">
+                          {grantablePermissions.map(permission => (
+                            <label key={permission.id} className="permission-check">
+                              <input
+                                type="checkbox"
+                                disabled={!editable || admin.role === 'super_admin'}
+                                checked={(admin.permissions ?? []).includes(permission.id)}
+                                onChange={() => toggleUserPermission(admin, permission.id)}
+                              />
+                              <span>{permission.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </td>
+                      <td><span className={`badge badge-${admin.disabled ? 'warning' : 'success'}`}>{admin.disabled ? 'Disabled' : 'Active'}</span></td>
+                      <td>
+                        {editable && (
+                          <div className="row-actions">
+                            <button className="mini-action" onClick={() => handleToggle(admin.uid, admin.disabled)}>
+                              {admin.disabled ? <ToggleLeft size={14} /> : <ToggleRight size={14} />}
+                              {admin.disabled ? 'Enable' : 'Disable'}
+                            </button>
+                            <button className="icon-btn danger" onClick={() => handleDelete(admin.uid)}><Trash2 size={14} /></button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }
-

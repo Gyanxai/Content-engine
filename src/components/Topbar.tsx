@@ -1,15 +1,22 @@
-import { Bell, LogOut } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Bell, LogOut, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const ROLE_COLORS: Record<string, string> = {
+  super_admin: '#8A5CFF',
   admin: '#8A5CFF',
   creator: '#1DAAF4',
   reviewer: '#4EB679',
-  editor: '#FEC61F',
 };
 
 export default function Topbar() {
   const { user, role, signOut } = useAuth();
+  const [theme, setTheme] = useState(() => localStorage.getItem('gyanx-theme') || 'dark');
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('gyanx-theme', theme);
+  }, [theme]);
 
   return (
     <header className="topbar">
@@ -19,6 +26,13 @@ export default function Topbar() {
       <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
         <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 8 }}>
           <Bell size={20} />
+        </button>
+        <button
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          className="icon-btn"
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 14px', backgroundColor: 'var(--bg-main)', borderRadius: 999 }}>
           <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #8A5CFF, #1DAAF4)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 14 }}>

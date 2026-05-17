@@ -2,14 +2,15 @@ import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   query, orderBy, serverTimestamp
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import type { AdminRole } from '../contexts/AuthContext';
+import { db, auth } from '../lib/firebase';
+import type { AdminPermission, AdminRole } from '../contexts/AuthContext';
 
 export interface AdminUser {
   uid: string;
   email: string;
   display_name: string;
   role: AdminRole;
+  permissions: AdminPermission[];
   disabled: boolean;
   created_by: string;
   created_at: unknown;
@@ -27,17 +28,18 @@ export async function getAdminByUid(uid: string): Promise<AdminUser | null> {
 }
 
 export async function createAdminRecord(
-  uid: string, email: string, role: AdminRole, createdBy: string
+  uid: string, email: string, role: AdminRole, createdBy: string, permissions: AdminPermission[] = []
 ): Promise<void> {
   const ref = doc(db, 'admins', uid);
   const existing = await getDoc(ref);
   if (existing.exists()) {
-    await updateDoc(ref, { role, disabled: false });
+    await updateDoc(ref, { role, permissions, disabled: false });
   } else {
     await setDoc(ref, {
       email,
       display_name: email.split('@')[0],
       role,
+      permissions,
       disabled: false,
       created_by: createdBy,
       created_at: serverTimestamp(),
@@ -47,6 +49,17 @@ export async function createAdminRecord(
 
 export async function updateAdminRole(uid: string, role: AdminRole): Promise<void> {
   await updateDoc(doc(db, 'admins', uid), { role });
+}
+
+export async function updateAdminAccess(uid: string, role: AdminRole, permissions: AdminPermission[], requesterUid: string): Promise<void> {
+  const token = await auth.currentUser?.getIdToken();
+  const response = await fetch('/api/create-admin', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ uid, role, permissions, requesterUid })
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || 'Failed to update access');
 }
 
 export async function setAdminDisabled(uid: string, disabled: boolean): Promise<void> {
@@ -62,10 +75,12 @@ export async function createAdminUser(data: {
   password: string;
   displayName: string;
   role: AdminRole;
+  permissions: AdminPermission[];
 }, requesterUid: string): Promise<{ success: boolean; uid: string }> {
+  const token = await auth.currentUser?.getIdToken();
   const response = await fetch('/api/create-admin', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
     body: JSON.stringify({ ...data, requesterUid })
   });
 

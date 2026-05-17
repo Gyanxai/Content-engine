@@ -1,0 +1,108 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "content_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "taxonomy.curriculum_id", "order": "ASCENDING" },
+        { "fieldPath": "state",                  "order": "ASCENDING" },
+        { "fieldPath": "created_at",             "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "content_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "taxonomy.curriculum_id", "order": "ASCENDING" },
+        { "fieldPath": "meta.level",             "order": "ASCENDING" },
+        { "fieldPath": "created_at",             "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "content_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "taxonomy.curriculum_id", "order": "ASCENDING" },
+        { "fieldPath": "type",                   "order": "ASCENDING" },
+        { "fieldPath": "created_at",             "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "content_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "taxonomy.curriculum_id", "order": "ASCENDING" },
+        { "fieldPath": "taxonomy.chapter_id",    "order": "ASCENDING" },
+        { "fieldPath": "created_at",             "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "content_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "taxonomy.chapter_id",    "order": "ASCENDING" },
+        { "fieldPath": "state",                  "order": "ASCENDING" },
+        { "fieldPath": "created_at",             "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "content_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "taxonomy.subtopic_id",   "order": "ASCENDING" },
+        { "fieldPath": "meta.level",             "order": "ASCENDING" },
+        { "fieldPath": "created_at",             "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "content_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "taxonomy.board",         "order": "ASCENDING" },
+        { "fieldPath": "state",                  "order": "ASCENDING" },
+        { "fieldPath": "created_at",             "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "content_versions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "content_id",  "order": "ASCENDING" },
+        { "fieldPath": "created_at",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "chapters",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "curriculum_id", "order": "ASCENDING" },
+        { "fieldPath": "order",         "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "topics",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "chapter_id", "order": "ASCENDING" },
+        { "fieldPath": "order",      "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "subtopics",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "topic_id", "order": "ASCENDING" },
+        { "fieldPath": "order",    "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "admins",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "role",       "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

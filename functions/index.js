@@ -6,46 +6,62 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
-/**
- * Cloud Function to create a new admin user from the frontend.
- * This is required because client-side Firebase SDK cannot create users with passwords
- * while another user is logged in.
- */
+const ALL_PERMISSIONS = [
+  'dashboard',
+  'curriculum_builder',
+  'existing_curriculum',
+  'analytics',
+  'bulk_import',
+  'review_publish',
+  'manage_admins',
+  'manage_super_admins'
+];
+
+const ADMIN_GRANTABLE = [
+  'dashboard',
+  'curriculum_builder',
+  'existing_curriculum',
+  'analytics',
+  'bulk_import',
+  'review_publish'
+];
+
+function normalizePermissions(role, permissions) {
+  if (role === 'super_admin') return ALL_PERMISSIONS;
+  return (permissions || []).filter(permission => ADMIN_GRANTABLE.includes(permission));
+}
+
+function canGrant(requesterClaims, targetRole, targetPermissions) {
+  if (requesterClaims.role === 'super_admin') return true;
+  if (requesterClaims.role !== 'admin') return false;
+  if (targetRole === 'super_admin') return false;
+  return targetPermissions.every(permission => ADMIN_GRANTABLE.includes(permission));
+}
+
 exports.createAdminUser = functions.https.onCall(async (data, context) => {
-  // 1. Check if the requester is an admin
-  if (!context.auth || context.auth.token.role !== 'admin') {
-    throw new functions.https.HttpsError(
-      'permission-denied',
-      'Only Super Admins can create new admin accounts.'
-    );
+  if (!context.auth) {
+    throw new functions.https.HttpsError('permission-denied', 'Authentication required.');
   }
 
   const { email, password, displayName, role } = data;
+  const permissions = normalizePermissions(role, data.permissions);
+
+  if (!canGrant(context.auth.token, role, permissions)) {
+    throw new functions.https.HttpsError('permission-denied', 'Insufficient access to grant this role or permissions.');
+  }
 
   if (!email || !password || !role) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Missing required fields: email, password, or role.'
-    );
+    throw new functions.https.HttpsError('invalid-argument', 'Missing required fields: email, password, or role.');
   }
 
   try {
-    // 2. Create user in Firebase Auth
-    const userRecord = await admin.auth().createUser({
-      email,
-      password,
-      displayName,
-    });
-
-    // 3. Set Custom Claims (The "Role")
-    await admin.auth().setCustomUserClaims(userRecord.uid, { role });
-
-    // 4. Create record in Firestore '/admins' collection
-    // This serves as the "separate authentication table" reference
+    const userRecord = await admin.auth().createUser({ email, password, displayName });
+    await admin.auth().setCustomUserClaims(userRecord.uid, { role, permissions });
     await admin.firestore().collection('admins').doc(userRecord.uid).set({
       email,
-      display_name: displayName,
+      display_name: displayName || email.split('@')[0],
       role,
+      permissions,
       disabled: false,
       created_by: context.auth.uid,
       created_at: admin.firestore.FieldValue.serverTimestamp(),

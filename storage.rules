@@ -13,12 +13,12 @@ service firebase.storage {
     }
 
     function isAdmin() {
-      return isSignedIn() && request.auth.token.role == 'admin';
+      return isSignedIn() && (request.auth.token.role == 'admin' || request.auth.token.role == 'super_admin');
     }
 
     function isEditor() {
       return isSignedIn() &&
-        (request.auth.token.role == 'admin' || request.auth.token.role == 'editor');
+        (request.auth.token.role in ['super_admin', 'admin', 'creator', 'reviewer']);
     }
 
     // ── Student avatars ─────────────────────────────────────────────────────

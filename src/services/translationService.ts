@@ -11,16 +11,29 @@ export const LANGUAGES = [
   { code: 'ur', name: 'Urdu',      script: 'اردو'     },
 ];
 
+// Session-level cache: key = `${langCode}::${text}`
+const _cache = new Map<string, string>();
+
+function cacheKey(langCode: string, text: string): string {
+  return `${langCode}::${text}`;
+}
+
 async function translateText(text: string, langCode: string): Promise<string> {
+  const key = cacheKey(langCode, text);
+  if (_cache.has(key)) return _cache.get(key)!;
+
   const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${langCode}`;
   const res = await fetch(url);
   const json = await res.json();
-  return json?.responseData?.translatedText || '';
+  const result: string = json?.responseData?.translatedText || '';
+
+  _cache.set(key, result);
+  return result;
 }
 
 export async function translateAll(
   text: string,
-  onProgress?: (lang: string, result: string) => void
+  onProgress?: (lang: string, result: string) => void,
 ): Promise<Record<string, string>> {
   const results: Record<string, string> = {};
   for (const lang of LANGUAGES) {
@@ -29,4 +42,8 @@ export async function translateAll(
     onProgress?.(lang.code, translated);
   }
   return results;
+}
+
+export function clearTranslationCache(): void {
+  _cache.clear();
 }

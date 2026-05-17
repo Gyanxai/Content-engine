@@ -9,22 +9,21 @@ interface StatusWorkflowProps {
   onUpdated: (newStatus: ContentStatus) => void;
 }
 
-const STEPS: ContentStatus[] = ['draft', 'in_review', 'published'];
+const STEPS: ContentStatus[] = ['draft', 'review', 'published'];
 const STEP_LABELS: Record<ContentStatus, string> = {
   draft: 'Draft',
-  in_review: 'In Review',
+  review: 'In Review',
   published: 'Published',
 };
 const STEP_COLORS: Record<ContentStatus, string> = {
   draft: '#FEC61F',
-  in_review: '#1DAAF4',
+  review: '#1DAAF4',
   published: '#4EB679',
 };
 
 function canTransition(from: ContentStatus, to: ContentStatus, role: AdminRole): boolean {
-  if (role === 'admin' || role === 'editor') return true;
-  if (role === 'creator' && from === 'draft' && to === 'in_review') return true;
-  if (role === 'reviewer' && from === 'in_review' && (to === 'published' || to === 'draft')) return true;
+  if (role === 'super_admin' || role === 'admin' || role === 'reviewer') return true;
+  if (role === 'creator' && from === 'draft' && to === 'review') return true;
   return false;
 }
 

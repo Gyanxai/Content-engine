@@ -1,159 +1,208 @@
 import { useEffect, useState } from 'react';
-import type { ContentStatus, Question } from '../services/contentService';
-import { getAllQuestions, deleteQuestion } from '../services/contentService';
+import type { ContentItem, ContentLevel, ContentStatus, ContentType, ContentVersion } from '../services/contentService';
+import { deleteContentItem, getAllContentItems, getContentVersions, getCurricula } from '../services/contentService';
 import StatusWorkflow from '../components/StatusWorkflow';
-import { Trash2, Edit, Search, Filter } from 'lucide-react';
+import { Edit, Filter, History, PlayCircle, Search, Trash2, X } from 'lucide-react';
+import { processUserAttempt } from '../services/adaptiveService';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
-const SUBJECTS = ['', 'Mathematics', 'Science'];
-const CLASSES = ['', '5', '6', '7', '8', '9', '10', '11', '12'];
-const STATUSES: ContentStatus[] = ['draft', 'in_review', 'published'];
-const LEVELS = ['', 'lv0', 'lv1', 'lv2'];
+const STATUSES: ContentStatus[] = ['draft', 'review', 'published'];
+const LEVELS = ['', 'lv0', 'lv1', 'lv2', 'lv3'];
+const TYPES: (ContentType | '')[] = ['', 'mcq_single', 'mcq_multi', 'true_false', 'fill_blank', 'match_following', 'short_answer', 'article', 'video', 'drag_drop', 'categorization', 'hotspot', 'voice_answer', 'case_study'];
 
 const STATUS_COLOR: Record<ContentStatus, string> = {
   draft: 'badge-warning',
-  in_review: 'badge-info',
+  review: 'badge-info',
   published: 'badge-success',
 };
+
 const STATUS_LABEL: Record<ContentStatus, string> = {
   draft: 'Draft',
-  in_review: 'In Review',
+  review: 'In Review',
   published: 'Published',
 };
 
 export default function ContentLibrary() {
-  const [questions, setQuestions] = useState<Question[]>([]);
+  const { user } = useAuth();
+  const [items, setItems] = useState<ContentItem[]>([]);
+  const [curricula, setCurricula] = useState<{ id?: string; title: string }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [subject, setSubject] = useState('');
-  const [cls, setCls] = useState('');
+  const [curriculumId, setCurriculumId] = useState('');
   const [status, setStatus] = useState<ContentStatus | ''>('');
   const [level, setLevel] = useState('');
+  const [type, setType] = useState<ContentType | ''>('');
   const [search, setSearch] = useState('');
+  const [showSim, setShowSim] = useState<ContentItem | null>(null);
+  const [simQuality, setSimQuality] = useState(5);
+  const [simLoading, setSimLoading] = useState(false);
+  const [historyFor, setHistoryFor] = useState<ContentItem | null>(null);
+  const [versions, setVersions] = useState<ContentVersion[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const navigate = useNavigate();
 
   const load = async () => {
     setLoading(true);
-    const results = await getAllQuestions({
-      subject: subject || undefined,
-      class: cls || undefined,
-      status: (status || undefined) as ContentStatus | undefined,
-      level: (level || undefined) as Question['level'] | undefined,
+    const results = await getAllContentItems({
+      curriculum_id: curriculumId || undefined,
+      state: status || undefined,
+      level: (level || undefined) as ContentLevel | undefined,
+      type: type || undefined,
     });
-    setQuestions(results);
+    setItems(results);
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, [subject, cls, status, level]);
+  useEffect(() => { getCurricula().then(setCurricula); }, []);
+  useEffect(() => { load(); }, [curriculumId, status, level, type]);
+
+  const filtered = items.filter(item => {
+    const haystack = `${item.meta?.title ?? ''} ${item.content?.body ?? ''} ${item.type}`.toLowerCase();
+    return haystack.includes(search.toLowerCase());
+  });
 
   const handleStatusUpdate = (id: string, newStatus: ContentStatus) => {
-    setQuestions(prev => prev.map(q => q.id === id ? { ...q, status: newStatus } : q));
+    setItems(prev => prev.map(item => item.id === id ? { ...item, state: newStatus } : item));
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this question? This cannot be undone.')) return;
-    await deleteQuestion(id);
-    setQuestions(prev => prev.filter(q => q.id !== id));
+    if (!confirm('Delete this content item? This cannot be undone.')) return;
+    await deleteContentItem(id);
+    setItems(prev => prev.filter(item => item.id !== id));
   };
 
-  const filtered = questions.filter(q => {
-    if (!search) return true;
-    const text = q.content_en?.text?.toLowerCase() ?? '';
-    return text.includes(search.toLowerCase());
-  });
+  const handleSimulate = async () => {
+    if (!showSim || !user) return;
+    setSimLoading(true);
+    try {
+      await processUserAttempt(
+        user.uid,
+        showSim.id!,
+        showSim.taxonomy?.topic_id || '',
+        simQuality >= 3,
+        15,
+        simQuality
+      );
+      alert('Simulation successful! Check user_progress and user_reviews collections.');
+      setShowSim(null);
+    } catch (e) {
+      alert('Simulation failed: ' + (e as Error).message);
+    } finally {
+      setSimLoading(false);
+    }
+  };
 
-  const selectStyle = { padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-color)', fontFamily: 'inherit', fontSize: 14, outline: 'none', backgroundColor: '#0a0a0a', color: 'inherit' };
+  const openHistory = async (item: ContentItem) => {
+    setHistoryFor(item);
+    setHistoryLoading(true);
+    const results = await getContentVersions(item.id!);
+    setVersions(results);
+    setHistoryLoading(false);
+  };
+
+  const formatDate = (version: ContentVersion) => {
+    const raw = version.created_at;
+    if (!raw) return 'Just now';
+    return raw.toDate().toLocaleString();
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <div className="flex-between">
-        <div><h1>Content Library</h1><p style={{ color: 'var(--text-secondary)' }}>All questions from Cloud Firestore.</p></div>
-      </div>
-
-      {/* Filters */}
-      <div className="card" style={{ padding: '16px 20px' }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Filter size={16} color="var(--text-secondary)" />
-          <select style={selectStyle} value={subject} onChange={e => setSubject(e.target.value)}>
-            <option value="">All Subjects</option>
-            {SUBJECTS.slice(1).map(s => <option key={s}>{s}</option>)}
-          </select>
-          <select style={selectStyle} value={cls} onChange={e => setCls(e.target.value)}>
-            <option value="">All Classes</option>
-            {CLASSES.slice(1).map(c => <option key={c}>Class {c}</option>)}
-          </select>
-          <select style={selectStyle} value={status} onChange={e => setStatus(e.target.value as ContentStatus | '')}>
-            <option value="">All Statuses</option>
-            {STATUSES.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-          </select>
-          <select style={selectStyle} value={level} onChange={e => setLevel(e.target.value)}>
-            <option value="">All Levels</option>
-            {LEVELS.slice(1).map(l => <option key={l} value={l}>{l === 'lv0' ? 'Level 0' : l === 'lv1' ? 'Level 1' : 'Level 2'}</option>)}
-          </select>
-          <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-            <input placeholder="Search question text…" value={search} onChange={e => setSearch(e.target.value)}
-              style={{ ...selectStyle, paddingLeft: 32, width: '100%', boxSizing: 'border-box' }} />
+    <div className="library-screen">
+      {historyFor && (
+        <div className="modal-backdrop">
+          <div className="card history-modal">
+            <div className="flex-between">
+              <div>
+                <h2>Version History</h2>
+                <p>{historyFor.meta?.title || historyFor.id}</p>
+              </div>
+              <button className="icon-btn" onClick={() => setHistoryFor(null)}><X size={18} /></button>
+            </div>
+            {historyLoading ? (
+              <div className="empty-state">Loading saved versions...</div>
+            ) : versions.length === 0 ? (
+              <div className="empty-state">No versions have been recorded for this content yet.</div>
+            ) : (
+              <div className="history-list">
+                {versions.map(version => (
+                  <article key={version.id} className="history-row">
+                    <div>
+                      <strong>{version.change_type}</strong>
+                      <span>{formatDate(version)} by {version.changed_by}</span>
+                    </div>
+                    <p>{typeof version.snapshot.content?.body === 'string' ? version.snapshot.content.body : version.snapshot.meta?.title}</p>
+                    <code>{version.id}</code>
+                  </article>
+                ))}
+              </div>
+            )}
           </div>
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{filtered.length} questions</span>
+        </div>
+      )}
+
+      <div className="page-heading">
+        <div>
+          <h1>Existing Curriculum</h1>
+          <p>Edit, delete, push content for review, publish after approval, and check version history.</p>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <section className="card filter-panel">
+        <Filter size={16} />
+        <select className="field" value={curriculumId} onChange={e => setCurriculumId(e.target.value)}>
+          <option value="">All Curricula</option>
+          {curricula.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+        </select>
+        <select className="field" value={status} onChange={e => setStatus(e.target.value as ContentStatus | '')}>
+          <option value="">All Statuses</option>
+          {STATUSES.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+        </select>
+        <select className="field" value={level} onChange={e => setLevel(e.target.value)}>
+          <option value="">All Levels</option>
+          {LEVELS.slice(1).map(l => <option key={l} value={l}>Level {l.replace('lv', '')}</option>)}
+        </select>
+        <select className="field" value={type} onChange={e => setType(e.target.value as ContentType | '')}>
+          <option value="">All Content Types</option>
+          {TYPES.slice(1).map(t => <option key={t} value={t}>{String(t).replaceAll('_', ' ')}</option>)}
+        </select>
+        <div className="search-field">
+          <Search size={14} />
+          <input className="field" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search content" />
+        </div>
+        <span>{filtered.length} content items</span>
+      </section>
+
+      <section className="card table-card">
         {loading ? (
-          <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-secondary)' }}>⏳ Loading…</div>
+          <div className="empty-state">Loading content...</div>
         ) : filtered.length === 0 ? (
-          <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-secondary)' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
-            No questions found. Try adjusting your filters.
-          </div>
+          <div className="empty-state">No content found for these filters.</div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+          <div className="table-wrap">
+            <table>
               <thead>
-                <tr style={{ borderBottom: '2px solid var(--border-color)', backgroundColor: '#050505' }}>
-                  {['Question', 'Subject', 'Class', 'Level', 'Type', 'Status', 'Workflow', 'Actions'].map(h => (
-                    <th key={h} style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
-                  ))}
+                <tr>
+                  {['Content', 'Curriculum', 'Level', 'Type', 'Status', 'Review Flow', 'Version History', 'Actions'].map(header => <th key={header}>{header}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(q => (
-                  <tr key={q.id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.1s' }}
-                    onMouseOver={e => (e.currentTarget.style.backgroundColor = 'var(--bg-main)')}
-                    onMouseOut={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                  >
-                    <td style={{ padding: '14px 16px', maxWidth: 280 }}>
-                      <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {q.content_en?.text || '(No text)'}
-                      </div>
+                {filtered.map(item => (
+                  <tr key={item.id}>
+                    <td>
+                      <strong>{item.meta?.title || (typeof item.content?.body === 'string' ? item.content.body.slice(0, 50) : '') || '(Untitled)'}</strong>
+                      <span>{item.id}</span>
                     </td>
-                    <td style={{ padding: '14px 16px', fontSize: 13 }}>{q.subject || '—'}</td>
-                    <td style={{ padding: '14px 16px', fontSize: 13 }}>Class {q.class || '—'}</td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <span className="badge badge-info">{q.level}</span>
-                    </td>
-                    <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-secondary)' }}>{q.type}</td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <span className={`badge ${STATUS_COLOR[q.status]}`}>{STATUS_LABEL[q.status]}</span>
-                    </td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <StatusWorkflow
-                        questionId={q.id!}
-                        currentStatus={q.status}
-                        onUpdated={(s) => handleStatusUpdate(q.id!, s)}
-                      />
-                    </td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={() => navigate('/builder')} title="Edit"
-                          style={{ background: 'none', border: '1px solid var(--border-color)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', color: 'var(--text-secondary)' }}>
-                          <Edit size={14} />
-                        </button>
-                        <button onClick={() => handleDelete(q.id!)} title="Delete"
-                          style={{ background: 'none', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', color: '#ef4444' }}>
-                          <Trash2 size={14} />
-                        </button>
+                    <td>{item.taxonomy?.board} / {item.taxonomy?.medium} / Class {item.taxonomy?.class} / {item.taxonomy?.subject}</td>
+                    <td><span className="badge badge-info">Level {item.meta?.level.replace('lv', '')}</span></td>
+                    <td>{item.type.replaceAll('_', ' ')}</td>
+                    <td><span className={`badge ${STATUS_COLOR[item.state]}`}>{STATUS_LABEL[item.state]}</span></td>
+                    <td><StatusWorkflow questionId={item.id!} currentStatus={item.state} onUpdated={s => handleStatusUpdate(item.id!, s)} /></td>
+                    <td><button className="mini-action" onClick={() => openHistory(item)}><History size={13} /> View</button></td>
+                    <td><button className="mini-action" onClick={() => setShowSim(item)}><PlayCircle size={13} /> Sim</button></td>
+                    <td>
+                      <div className="row-actions">
+                        <button className="icon-btn" title="Edit" onClick={() => navigate(`/builder?curriculum=${item.taxonomy?.curriculum_id}&chapter=${item.taxonomy?.chapter_id}&topic=${item.taxonomy?.topic_id}&subtopic=${item.taxonomy?.subtopic_id}`)}><Edit size={14} /></button>
+                        <button className="icon-btn danger" title="Delete" onClick={() => handleDelete(item.id!)}><Trash2 size={14} /></button>
                       </div>
                     </td>
                   </tr>
@@ -162,8 +211,36 @@ export default function ContentLibrary() {
             </table>
           </div>
         )}
-      </div>
+      </section>
+      {showSim && (
+        <div className="modal-backdrop">
+          <div className="card modal-card">
+            <div className="flex-between">
+              <h3>Simulate Student Attempt</h3>
+              <button className="icon-btn" onClick={() => setShowSim(null)}><X size={18} /></button>
+            </div>
+            <p>Testing <strong>{showSim.meta.title}</strong></p>
+            <div style={{ margin: '20px 0' }}>
+              <label>Simulated Recall Quality (0-5)
+                <select className="field" value={simQuality} onChange={e => setSimQuality(Number(e.target.value))}>
+                  <option value={5}>5 - Perfect Recall</option>
+                  <option value={4}>4 - Hesitant but Correct</option>
+                  <option value={3}>3 - Difficult but Correct</option>
+                  <option value={2}>2 - Wrong (Correct answer recognized)</option>
+                  <option value={1}>1 - Wrong (Correct answer seemed familiar)</option>
+                  <option value={0}>0 - Complete Blackout</option>
+                </select>
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-outline" onClick={() => setShowSim(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleSimulate} disabled={simLoading}>
+                {simLoading ? 'Processing...' : 'Execute Simulation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

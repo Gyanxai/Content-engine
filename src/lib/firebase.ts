@@ -5,7 +5,7 @@ import { getStorage } from 'firebase/storage';
 import { getFunctions } from 'firebase/functions';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAC4VVL9DMZe9sypJ5sNxAb5VH6RiaEe0U",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: "gx-app-backend.firebaseapp.com",
   projectId: "gx-app-backend",
   storageBucket: "gx-app-backend.firebasestorage.app",
